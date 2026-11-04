@@ -1,0 +1,70 @@
+{
+  "id": "nodebb-plugin-password",
+  "library": "./library.js",
+  "hooks": [
+    {
+      "hook": "static:app.preload",
+      "method": "preload"
+    },
+    {
+      "hook": "static:app.load",
+      "method": "init"
+    },
+    {
+      "hook": "filter:admin.header.build",
+      "method": "adminMenu"
+    },
+    {
+      "hook": "filter:topic.get",
+      "method": "filterTopicGet"
+    },
+    {
+      "hook": "filter:topic.thread_tools",
+      "method": "threadTools"
+    },
+    {
+      "hook": "filter:privileges.topics.filter",
+      "method": "filterTids"
+    },
+    {
+      "hook": "filter:privileges.posts.filter",
+      "method": "filterPids"
+    },
+    {
+      "hook": "filter:privileges.categories.filter",
+      "method": "filterCids"
+    },
+    {
+      "hook": "filter:post.getPosts",
+      "method": "filterPosts"
+    },
+    {
+      "hook": "filter:post.getPostSummaryByPids",
+      "method": "filterPosts"
+    },
+    {
+      "hook": "filter:notification.push",
+      "method": "filterNotification"
+    },
+    {
+      "hook": "action:topic.post",
+      "method": "onTopicPost"
+    },
+    {
+      "hook": "action:topic.purge",
+      "method": "onTopicPurge"
+    },
+    {
+      "hook": "action:category.delete",
+      "method": "onCategoryDelete"
+    }
+  ],
+  "scripts": [
+    "public/js/client.js"
+  ],
+  "languages": "languages",
+  "templates": "templates",
+  "modules": {
+    "../admin/plugins/password-protect.js": "public/js/acp.js"
+  }
+}
