@@ -14,6 +14,40 @@ define('admin/plugins/password-protect', ['api', 'alerts', 'translator', 'bootbo
 	const local = ts => (ts ? new Date(ts - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '');
 	const parseDt = v => (v ? new Date(v).getTime() : 0);
 
+
+	const PAGES = ['manage', 'categories', 'topics', 'settings', 'permissions', 'rules', 'access', 'log'];
+	const NAV = [
+		['protections', ['manage', 'categories', 'topics']],
+		['configuration', ['settings', 'permissions', 'rules']],
+		['monitoring', ['access', 'log']],
+	];
+	const STYLE = `#pp-acp .pp-header { border-bottom: 1px solid var(--bs-border-color); }
+		#pp-acp .pp-nav { position: sticky; top: 1rem; }
+		#pp-acp .pp-nav-title { font-size: .75rem; font-weight: 600; color: var(--bs-secondary-color); margin: 0 .75rem .5rem; }
+		#pp-acp .pp-nav-group { font-size: .7rem; letter-spacing: .02em; color: var(--bs-secondary-color); margin: 1rem .75rem .25rem; text-transform: uppercase; }
+		#pp-acp .pp-nav-link { display: block; padding: .4rem .75rem; border-radius: .375rem; font-size: .8rem; color: var(--bs-body-color); text-decoration: none; }
+		#pp-acp .pp-nav-link:hover { background: var(--bs-tertiary-bg); }
+		#pp-acp .pp-nav-link.active { background: var(--bs-secondary-bg); font-weight: 600; }`;
+
+	function frameHtml() {
+		const groups = NAV.map(([g, pages]) => `<div class="pp-nav-group">[[password-protect:acp.nav.${g}]]</div>${pages.map(p => `<a class="pp-nav-link" role="button" tabindex="0" data-pp-page="${p}" href="${rel}/admin/plugins/password-protect/${p}">[[password-protect:acp.tab.${p}]]</a>`).join('')}`).join('');
+		return `<style>${STYLE}</style>
+			<div class="pp-header d-flex align-items-center justify-content-between gap-2 pb-2 mb-4">
+				<h4 class="mb-0 fw-semibold"><i class="fa fa-lock text-muted"></i> [[password-protect:acp.title]]</h4>
+				<button type="submit" class="btn btn-primary btn-sm" id="pp-save" hidden>[[password-protect:form.save]]</button>
+			</div>
+			<div class="row">
+				<div class="col-lg-9 order-2 order-lg-1"><div id="pp-content"></div></div>
+				<div class="col-lg-3 order-1 order-lg-2 mb-4"><nav class="pp-nav" id="pp-tabs"><div class="pp-nav-title">[[password-protect:acp.nav.title]]</div>${groups}</nav></div>
+			</div>`;
+	}
+
+	function currentPage() {
+		const fromAttr = $('#pp-acp').attr('data-page');
+		const fromUrl = window.location.pathname.split('/').filter(Boolean).pop();
+		return [fromAttr, fromUrl].find(p => PAGES.includes(p)) || 'manage';
+	}
+
 	function render(html) {
 		translator.translate(html, (out) => { $root().html(out); });
 	}
@@ -287,7 +321,7 @@ define('admin/plugins/password-protect', ['api', 'alerts', 'translator', 'bootbo
 
 	ACP.load = function (page) {
 		ACP.page = page;
-		$('#pp-tabs .nav-link').removeClass('active').filter(`[data-pp-page="${page}"]`).addClass('active');
+		$('#pp-tabs .pp-nav-link').removeClass('active').filter(`[data-pp-page="${page}"]`).addClass('active');
 		// the header "Save" button belongs to the two form pages
 		const formId = { settings: 'pp-set', permissions: 'pp-perm' }[page];
 		$('#pp-save').prop('hidden', !formId).attr('form', formId || null);
@@ -300,7 +334,19 @@ define('admin/plugins/password-protect', ['api', 'alerts', 'translator', 'bootbo
 	};
 
 	ACP.init = function () {
-		ACP.load($('#pp-acp').data('page') || 'manage');
+		const page = currentPage();
+		translator.translate(frameHtml(), (out) => {
+			$('#pp-acp').html(out);
+			const go = (e) => {
+				e.preventDefault();
+				const target = $(e.currentTarget).attr('data-pp-page');
+				if (window.history && history.replaceState) history.replaceState(null, '', `${rel}/admin/plugins/password-protect/${target}`);
+				$('#pp-acp').attr('data-page', target);
+				ACP.load(target);
+			};
+			$('#pp-tabs').on('click', '.pp-nav-link', go).on('keydown', '.pp-nav-link', (e) => { if (e.key === 'Enter' || e.key === ' ') go(e); });
+			ACP.load(page);
+		});
 	};
 
 	return ACP;

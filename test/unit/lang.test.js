@@ -26,3 +26,12 @@ test('every [[password-protect:key]] used in templates and scripts exists', () =
 	}
 	assert.deepStrictEqual([...missing], []);
 });
+
+test('ACP menu keys (built dynamically) exist', () => {
+	const keys = new Set(Object.keys(load('he')));
+	const pages = ['manage', 'categories', 'topics', 'settings', 'permissions', 'rules', 'access', 'log'];
+	const need = ['acp.title', 'acp.nav.title', 'acp.nav.protections', 'acp.nav.configuration', 'acp.nav.monitoring', ...pages.map(p => `acp.tab.${p}`)];
+	assert.deepStrictEqual(need.filter(k => !keys.has(k)), []);
+	const src = fs.readFileSync(path.join(__dirname, '../../public/js/acp.js'), 'utf8');
+	assert.ok(pages.every(p => src.includes(`'${p}'`)));
+});
