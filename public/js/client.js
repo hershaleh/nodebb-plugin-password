@@ -42,9 +42,13 @@
 			const dlg = bootbox.dialog({
 				title: `<i class="fa fa-lock"></i> ${t[0]}`,
 				message: body,
-				onEscape: true,
+				onEscape: false,
+				closeButton: false,
+				backdrop: 'static',
+				centered: true,
+				className: 'pp-unlock-modal',
 				buttons: {
-					cancel: { label: t[3], className: 'btn-link', callback: () => { modalOpen = false; } },
+					cancel: { label: t[3], className: 'btn-link', callback: () => { modalOpen = false; leaveLocked(); } },
 					ok: {
 						label: t[2],
 						className: 'btn-primary',
@@ -68,14 +72,37 @@
 					},
 				},
 			});
+			dlg.find('.modal-dialog').addClass('modal-dialog-centered');
+			document.body.classList.add('pp-blur');
 			dlg.on('shown.bs.modal', () => dlg.find('#pp-password').trigger('focus'));
-			dlg.on('hidden.bs.modal', () => { modalOpen = false; });
+			dlg.on('hidden.bs.modal', () => { if (!document.querySelector('.modal.show')) document.body.classList.remove('pp-blur'); });
 			dlg.find('form').on('submit', (e) => { e.preventDefault(); dlg.find('.btn-primary').trigger('click'); });
 		});
 	}
 
+	function injectStyle() {
+		if (document.getElementById('pp-style')) return;
+		const st = document.createElement('style');
+		st.id = 'pp-style';
+		st.textContent = 'body.pp-blur .modal-backdrop.show{opacity:1;background:rgba(0,0,0,.35);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)}'
+			+ '.pp-unlock-modal .modal-content{box-shadow:0 1rem 3rem rgba(0,0,0,.25)}';
+		document.head.appendChild(st);
+	}
+
+	// cancelling the prompt leaves the protected page instead of leaving a dead 403 behind
+	function leaveLocked() {
+		if (window.history.length > 1) window.history.back(); else ajaxify.go('');
+	}
+
+	function isLockedPage() {
+		const d = ajaxify.data;
+		if (!d) return false;
+		return !!d.passwordProtected || !!(d.template && (d.template.name === '403' || d.template['403']));
+	}
+
 	function handleLocked() {
-		if (modalOpen || !(ajaxify.data && ajaxify.data.passwordProtected)) return;
+		if (modalOpen || !isLockedPage()) return;
+		injectStyle();
 		modalOpen = true;
 		loadModules((...mods) => {
 			const [api] = mods;
@@ -90,15 +117,15 @@
 	}
 
 	// ---- topic tools: protect / change / remove ----
-	function openManage(tid) {
+	function openManage(type, id) {
 		loadModules((api, bootbox, translator, alerts) => {
-			const key = `t:${tid}`;
-			api.get(`${API}/protection/t/${tid}`).then((p) => {
+			const isTopic = type === 't';
+			api.get(`${API}/protection/${type}/${id}`).then((p) => {
 				translator.translateKeys([
 					'[[password-protect:tools.protect]]', '[[password-protect:form.password]]', '[[password-protect:form.message]]',
 					'[[password-protect:form.start]]', '[[password-protect:form.end]]', '[[password-protect:form.lock-change]]',
 					'[[password-protect:form.lock-remove]]', '[[password-protect:form.save]]', '[[password-protect:form.remove]]',
-					'[[password-protect:form.forgot]]', '[[password-protect:form.account-password]]', '[[password-protect:form.keep-password]]', '[[password-protect:form.message-hint]]',
+					'[[password-protect:form.forgot]]', '[[password-protect:form.account-password]]', '[[password-protect:form.keep-password]]', '[[password-protect:form.message-hint]]', '[[password-protect:form.hidden]]',
 				], (t) => {
 					const iso = ts => (ts ? new Date(ts - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '');
 					const dlg = bootbox.dialog({
@@ -114,10 +141,10 @@
 								<div class="col"><label class="form-label">${t[3]}</label><input type="datetime-local" name="startAt" class="form-control" value="${iso(p.startAt)}"></div>
 								<div class="col"><label class="form-label">${t[4]}</label><input type="datetime-local" name="endAt" class="form-control" value="${iso(p.endAt)}"></div>
 							</div>
-							${p.protected && p.can.lockChange ? `<div class="form-check"><input class="form-check-input" type="checkbox" name="lockChange" id="pp-lc" ${p.lockChange ? 'checked' : ''}><label class="form-check-label" for="pp-lc">${t[5]}</label></div>` : ''}
-							${p.protected && p.can.lockRemove ? `<div class="form-check"><input class="form-check-input" type="checkbox" name="lockRemove" id="pp-lr" ${p.lockRemove ? 'checked' : ''}><label class="form-check-label" for="pp-lr">${t[6]}</label></div>` : ''}
-							${p.protected && !p.can.change ? '' : ''}
-							${p.protected && p.can.change ? `<hr><details><summary>${t[9]}</summary>
+							${isTopic && p.protected && p.can.lockChange ? `<div class="form-check"><input class="form-check-input" type="checkbox" name="lockChange" id="pp-lc" ${p.lockChange ? 'checked' : ''}><label class="form-check-label" for="pp-lc">${t[5]}</label></div>` : ''}
+							${isTopic && p.protected && p.can.lockRemove ? `<div class="form-check"><input class="form-check-input" type="checkbox" name="lockRemove" id="pp-lr" ${p.lockRemove ? 'checked' : ''}><label class="form-check-label" for="pp-lr">${t[6]}</label></div>` : ''}
+							${!isTopic ? `<div class="form-check"><input class="form-check-input" type="checkbox" name="hidden" id="pp-hid" ${p.hidden ? 'checked' : ''}><label class="form-check-label" for="pp-hid">${t[13]}</label></div>` : ''}
+							${isTopic && p.protected && p.can.change ? `<hr><details><summary>${t[9]}</summary>
 								<div class="mt-2"><label class="form-label">${t[10]}</label><input type="password" name="accountPassword" class="form-control" autocomplete="current-password">
 								<label class="form-label mt-2">${t[1]}</label><input type="password" name="resetPassword" class="form-control" autocomplete="new-password">
 								<button type="button" class="btn btn-sm btn-outline-secondary mt-2 pp-reset">${t[9]}</button></div></details>` : ''}
@@ -125,7 +152,7 @@
 						buttons: {
 							...(p.protected && p.can.remove ? {
 								remove: { label: t[8], className: 'btn-danger', callback: () => {
-									api.del(`${API}/protection/t/${tid}`, {}).then(() => { notify(alerts, 'success', '[[password-protect:form.removed]]'); ajaxify.refresh(); }).catch(e => notify(alerts, 'error', errMsg(e)));
+									api.del(`${API}/protection/${type}/${id}`, {}).then(() => { notify(alerts, 'success', '[[password-protect:form.removed]]'); ajaxify.refresh(); }).catch(e => notify(alerts, 'error', errMsg(e)));
 								} },
 							} : {}),
 							save: {
@@ -140,16 +167,17 @@
 										startAt: val('startAt') ? new Date(val('startAt')).getTime() : 0,
 										endAt: val('endAt') ? new Date(val('endAt')).getTime() : 0,
 									};
+									if (!isTopic) body.hidden = f.find('[name=hidden]').prop('checked');
 									const lockOps = [];
-									if (p.protected) {
+									if (isTopic && p.protected) {
 										const lc = f.find('[name=lockChange]'); const lr = f.find('[name=lockRemove]');
 										const lockBody = {};
 										if (lc.length && lc.prop('checked') !== p.lockChange) lockBody.lockChange = lc.prop('checked');
 										if (lr.length && lr.prop('checked') !== p.lockRemove) lockBody.lockRemove = lr.prop('checked');
 										if (Object.keys(lockBody).length) lockOps.push(lockBody);
 									}
-									const doSave = (p.protected && !p.can.change) ? Promise.resolve() : api.put(`${API}/protection/t/${tid}`, body);
-									doSave.then(() => Promise.all(lockOps.map(b => api.post(`${API}/protection/t/${tid}/lock`, b))))
+									const doSave = (p.protected && !p.can.change) ? Promise.resolve() : api.put(`${API}/protection/${type}/${id}`, body);
+									doSave.then(() => Promise.all(lockOps.map(b => api.post(`${API}/protection/t/${id}/lock`, b))))
 										.then(() => { notify(alerts, 'success', '[[password-protect:form.saved]]'); dlg.modal('hide'); ajaxify.refresh(); })
 										.catch(e => notify(alerts, 'error', errMsg(e)));
 									return false;
@@ -159,7 +187,7 @@
 					});
 					dlg.find('.pp-reset').on('click', () => {
 						const f = dlg.find('form.pp-manage');
-						api.post(`${API}/protection/t/${tid}/reset`, { accountPassword: f.find('[name=accountPassword]').val(), newPassword: f.find('[name=resetPassword]').val() })
+						api.post(`${API}/protection/t/${id}/reset`, { accountPassword: f.find('[name=accountPassword]').val(), newPassword: f.find('[name=resetPassword]').val() })
 							.then(() => { notify(alerts, 'success', '[[password-protect:form.saved]]'); dlg.modal('hide'); })
 							.catch(e => notify(alerts, 'error', errMsg(e)));
 						f.find('[name=accountPassword],[name=resetPassword]').val('');
@@ -169,11 +197,87 @@
 		});
 	}
 
+	// ---- category page: protect the category, and protect selected topics from "topic tools" ----
+	function openBulk(tids) {
+		loadModules((api, bootbox, translator, alerts) => {
+			translator.translateKeys(['[[password-protect:tools.protect]]', '[[password-protect:form.password]]', '[[password-protect:form.message]]', '[[password-protect:form.save]]', '[[password-protect:modal.cancel]]'], (t) => {
+				const dlg = bootbox.dialog({
+					title: `<i class="fa fa-lock"></i> ${t[0]} (${tids.length})`,
+					message: `<form class="pp-bulk" autocomplete="off"><div class="mb-3"><label class="form-label">${t[1]}</label><input type="password" name="password" class="form-control" autocomplete="new-password" maxlength="256" required></div>
+						<div class="mb-3"><label class="form-label">${t[2]}</label><textarea name="message" class="form-control" rows="2" maxlength="1000"></textarea></div></form>`,
+					buttons: {
+						cancel: { label: t[4], className: 'btn-link' },
+						save: {
+							label: t[3],
+							className: 'btn-primary',
+							callback: () => {
+								const f = dlg.find('form');
+								const password = f.find('[name=password]').val();
+								if (!password) return false;
+								const message = f.find('[name=message]').val();
+								Promise.allSettled(tids.map(tid => api.put(`${API}/protection/t/${tid}`, { password, message }))).then((res) => {
+									const bad = res.filter(r => r.status === 'rejected');
+									if (bad.length) notify(alerts, 'error', errMsg(bad[0].reason)); else notify(alerts, 'success', '[[password-protect:form.saved]]');
+									dlg.modal('hide');
+									ajaxify.refresh();
+								});
+								return false;
+							},
+						},
+					},
+				});
+			});
+		});
+	}
+
+	function enhanceCategory() {
+		const d = ajaxify.data;
+		if (!d || !d.template || d.template.name !== 'category' || !d.cid || isLockedPage()) return;
+		loadModules((api, bootbox, translator) => {
+			api.get(`${API}/me`).then((me) => {
+				if (!me || !(me.category || me.topics)) return;
+				translator.translateKeys(['[[password-protect:tools.protect]]'], ([label]) => {
+					if (me.topics) {
+						const $menu = $('.thread-tools .dropdown-menu').first();
+						if ($menu.length && !$menu.find('.pp-bulk-protect').length) {
+							const li = `<li><a class="dropdown-item rounded-1 d-flex align-items-center gap-2 pp-bulk-protect" href="#" role="menuitem"><i class="fa fa-fw fa-lock text-secondary"></i> <span>${esc(label)}</span></a></li>`;
+							const anchor = $menu.find('[component="topic/lock"]').closest('li');
+							if (anchor.length) anchor.first().before(li); else $menu.append(li);
+						}
+					}
+					if (me.category && !$('.pp-cat-btn').length) {
+						const btn = `<div class="btn-group pp-cat-btn"><button type="button" class="btn btn-ghost btn-sm ff-secondary d-flex gap-2 align-items-center pp-cat-protect"><i class="fa fa-fw fa-lock text-primary"></i><span class="d-none d-md-inline">${esc(label)}</span></button></div>`;
+						const $tools = $('.thread-tools').first();
+						if ($tools.length) $tools.before(btn);
+						else if ($('.topic-list-header').length) $('.topic-list-header').first().prepend(btn);
+						else $('[component="category"]').first().before(btn);
+					}
+				});
+			}).catch(() => {});
+		});
+	}
+
+	$(document).on('click', '.pp-cat-protect', function (e) {
+		e.preventDefault();
+		const cid = ajaxify.data && ajaxify.data.cid;
+		if (cid) openManage('c', cid);
+	});
+	$(document).on('click', '.pp-bulk-protect', function (e) {
+		e.preventDefault();
+		require(['topicSelect', 'alerts'], (topicSelect, alerts) => {
+			const tids = topicSelect.getSelectedTids();
+			if (!tids || !tids.length) return alerts.error('[[error:no-topics-selected]]');
+			if (tids.length === 1) return openManage('t', tids[0]);
+			return openBulk(tids);
+		});
+	});
+
 	$(window).on('action:ajaxify.end', handleLocked);
+	$(window).on('action:ajaxify.end', enhanceCategory);
 	$(document).on('click', '.pp-protect', function (e) {
 		e.preventDefault();
 		const tid = ajaxify.data && ajaxify.data.tid;
-		if (tid) openManage(tid);
+		if (tid) openManage('t', tid);
 	});
-	$(document).ready(handleLocked);
+	$(document).ready(() => { handleLocked(); enhanceCategory(); });
 }());
