@@ -37,3 +37,11 @@ test('administrators can never be removed from manageSettings', () => {
 	const s = settings.sanitize({ permissions: { manageSettings: [] } }, settings.DEFAULTS);
 	assert.ok(s.permissions.manageSettings.includes('administrators'));
 });
+
+test('custom prompt message: restricted to permitted groups by default; bad values fall back', () => {
+	assert.strictEqual(settings.DEFAULTS.messageWho, 'permitted');
+	assert.deepStrictEqual(settings.DEFAULTS.permissions.customMessage, ['administrators']);
+	assert.ok(settings.PERMISSIONS.includes('customMessage'));
+	assert.strictEqual(settings.sanitize({ messageWho: 'creators' }, settings.DEFAULTS).messageWho, 'creators');
+	assert.strictEqual(settings.sanitize({ messageWho: 'everyone' }, settings.DEFAULTS).messageWho, 'permitted');
+});

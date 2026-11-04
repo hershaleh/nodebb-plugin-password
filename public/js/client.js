@@ -30,11 +30,11 @@
 		const [api, bootbox, translator, alerts] = mods;
 		if (!pendingList.length) return done(true);
 		const item = pendingList[0];
-		translator.translateKeys(['[[password-protect:modal.title]]', '[[password-protect:modal.password]]', '[[password-protect:modal.submit]]', '[[password-protect:modal.cancel]]', '[[password-protect:modal.show]]'], (t) => {
+		translator.translateKeys(['[[password-protect:modal.title]]', '[[password-protect:modal.password]]', '[[password-protect:modal.submit]]', '[[password-protect:modal.cancel]]', '[[password-protect:modal.show]]', item.type === 'c' ? '[[password-protect:modal.auto.category]]' : '[[password-protect:modal.auto.topic]]'], (t) => {
 			const body = `
 				<form class="pp-form" autocomplete="off">
 					<p class="fw-semibold mb-1">${esc(item.title)}</p>
-					${item.message ? `<p class="text-muted pp-message">${esc(item.message)}</p>` : ''}
+					<p class="text-muted pp-message">${item.message ? esc(item.message) : t[5]}</p>
 					<label class="form-label" for="pp-password">${t[1]}</label>
 					<input id="pp-password" type="password" class="form-control" autocomplete="off" maxlength="256" required>
 					<div class="text-danger small mt-2 pp-error" role="alert" hidden></div>
@@ -98,7 +98,7 @@
 					'[[password-protect:tools.protect]]', '[[password-protect:form.password]]', '[[password-protect:form.message]]',
 					'[[password-protect:form.start]]', '[[password-protect:form.end]]', '[[password-protect:form.lock-change]]',
 					'[[password-protect:form.lock-remove]]', '[[password-protect:form.save]]', '[[password-protect:form.remove]]',
-					'[[password-protect:form.forgot]]', '[[password-protect:form.account-password]]', '[[password-protect:form.keep-password]]',
+					'[[password-protect:form.forgot]]', '[[password-protect:form.account-password]]', '[[password-protect:form.keep-password]]', '[[password-protect:form.message-hint]]',
 				], (t) => {
 					const iso = ts => (ts ? new Date(ts - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '');
 					const dlg = bootbox.dialog({
@@ -107,8 +107,9 @@
 						<form class="pp-manage" autocomplete="off">
 							<div class="mb-3"><label class="form-label">${t[1]}</label>
 								<input type="password" name="password" class="form-control" autocomplete="new-password" maxlength="256" placeholder="${p.protected ? t[11] : ''}"></div>
-							<div class="mb-3"><label class="form-label">${t[2]}</label>
-								<textarea name="message" class="form-control" rows="2" maxlength="1000">${esc(p.message || '')}</textarea></div>
+							${p.can.message ? `<div class="mb-3"><label class="form-label">${t[2]}</label>
+								<textarea name="message" class="form-control" rows="2" maxlength="1000">${esc(p.message || '')}</textarea>
+								<div class="form-text">${t[12]}</div></div>` : ''}
 							<div class="row g-2 mb-3">
 								<div class="col"><label class="form-label">${t[3]}</label><input type="datetime-local" name="startAt" class="form-control" value="${iso(p.startAt)}"></div>
 								<div class="col"><label class="form-label">${t[4]}</label><input type="datetime-local" name="endAt" class="form-control" value="${iso(p.endAt)}"></div>

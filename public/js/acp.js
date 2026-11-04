@@ -136,6 +136,10 @@ define('admin/plugins/password-protect', ['api', 'alerts', 'translator', 'bootbo
 					<option value="topic" ${s.policy === 'topic' ? 'selected' : ''}>[[password-protect:set.policy.topic]]</option>
 					<option value="category" ${s.policy === 'category' ? 'selected' : ''}>[[password-protect:set.policy.category]]</option>
 					<option value="both" ${s.policy === 'both' ? 'selected' : ''}>[[password-protect:set.policy.both]]</option></select></div>
+				<div class="mb-3"><label class="form-label">[[password-protect:set.messageWho]]</label><select class="form-select" data-k="messageWho">
+					<option value="permitted" ${s.messageWho === 'permitted' ? 'selected' : ''}>[[password-protect:set.messageWho.permitted]]</option>
+					<option value="creators" ${s.messageWho === 'creators' ? 'selected' : ''}>[[password-protect:set.messageWho.creators]]</option></select>
+					<div class="form-text">[[password-protect:set.messageWho.hint]]</div></div>
 				<div class="mb-3"><label class="form-label">[[password-protect:set.remember]]</label><select class="form-select" data-k="remember.mode">
 					<option value="none" ${s.remember.mode === 'none' ? 'selected' : ''}>[[password-protect:set.remember.none]]</option>
 					<option value="session" ${s.remember.mode === 'session' ? 'selected' : ''}>[[password-protect:set.remember.session]]</option>
@@ -151,8 +155,7 @@ define('admin/plugins/password-protect', ['api', 'alerts', 'translator', 'bootbo
 					<div class="col"><label class="form-label">[[password-protect:set.reminderHours]]</label><input type="number" min="1" class="form-control" data-k="notifications.reminderHours" value="${n.reminderHours}"></div></div>
 				<div class="mb-3"><label class="form-label">[[password-protect:set.replyContent]]</label><select class="form-select" data-k="notifications.replyContent">
 					<option value="generic" ${n.replyContent === 'generic' ? 'selected' : ''}>[[password-protect:set.reply.generic]]</option>
-					<option value="none" ${n.replyContent === 'none' ? 'selected' : ''}>[[password-protect:set.reply.none]]</option></select></div>
-				<button class="btn btn-primary" type="submit">[[password-protect:form.save]]</button></form>`);
+					<option value="none" ${n.replyContent === 'none' ? 'selected' : ''}>[[password-protect:set.reply.none]]</option></select></div></form>`);
 			setTimeout(() => $('#pp-set').on('submit', (e) => {
 				e.preventDefault();
 				const body = {};
@@ -173,8 +176,7 @@ define('admin/plugins/password-protect', ['api', 'alerts', 'translator', 'bootbo
 		Promise.all([api.get(`${API}/admin/settings`), api.get(`${API}/admin/groups`)]).then(([{ settings: s, permissions }, groups]) => {
 			const all = ['guests'].concat(groups).filter((g, i, a) => a.indexOf(g) === i);
 			render(`<p class="text-muted">[[password-protect:perm.note]]</p><form id="pp-perm">${table(['[[password-protect:perm.permission]]', '[[password-protect:perm.groups]]'], permissions.map(p => `<tr><td>[[password-protect:perm.${p}]]</td><td>
-				<select multiple class="form-select" size="5" data-p="${p}">${all.map(g => `<option value="${esc(g)}" ${(s.permissions[p] || []).includes(g) ? 'selected' : ''}>${esc(g)}</option>`).join('')}</select></td></tr>`))}
-				<button class="btn btn-primary" type="submit">[[password-protect:form.save]]</button></form>`);
+				<select multiple class="form-select" size="5" data-p="${p}">${all.map(g => `<option value="${esc(g)}" ${(s.permissions[p] || []).includes(g) ? 'selected' : ''}>${esc(g)}</option>`).join('')}</select></td></tr>`))}</form>`);
 			setTimeout(() => $('#pp-perm').on('submit', (e) => {
 				e.preventDefault();
 				const body = { permissions: {} };
@@ -286,6 +288,9 @@ define('admin/plugins/password-protect', ['api', 'alerts', 'translator', 'bootbo
 	ACP.load = function (page) {
 		ACP.page = page;
 		$('#pp-tabs .nav-link').removeClass('active').filter(`[data-pp-page="${page}"]`).addClass('active');
+		// the header "Save" button belongs to the two form pages
+		const formId = { settings: 'pp-set', permissions: 'pp-perm' }[page];
+		$('#pp-save').prop('hidden', !formId).attr('form', formId || null);
 		if (page === 'settings') settingsPage();
 		else if (page === 'permissions') permissionsPage();
 		else if (page === 'rules') rulesPage();
