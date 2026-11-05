@@ -35,3 +35,22 @@ test('ACP menu keys (built dynamically) exist', () => {
 	const src = fs.readFileSync(path.join(__dirname, '../../public/js/acp.js'), 'utf8');
 	assert.ok(pages.every(p => src.includes(`'${p}'`)));
 });
+
+test('lock page: renders a centred, blurred dialog with strings and no NodeBB theme dependency', async () => {
+	require('./_stub');
+	const orig = require.main.require;
+	require.main.require = (id) => {
+		if (id === 'nconf') return { get: () => '' };
+		if (id === './src/meta') return { config: { defaultLang: 'he', title: 'Forum <b>' } };
+		if (id === './src/user') return { getSettings: async () => ({}) };
+		return orig(id);
+	};
+	const lockpage = require('../../lib/lockpage');
+	const html = await lockpage.render({ headers: {} }, 0);
+	assert.match(html, /dir="rtl"/);
+	assert.match(html, /backdrop-filter:blur/);
+	assert.match(html, /type="password"/);
+	assert.ok(!html.includes('Forum <b>'), 'site title must be escaped');
+	assert.ok(html.includes('הקטגוריה הזו מוגנת בסיסמה'));
+	require.main.require = orig;
+});

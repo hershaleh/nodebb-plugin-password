@@ -29,8 +29,12 @@ define('admin/plugins/password-protect', ['api', 'alerts', 'translator', 'bootbo
 		#pp-acp .pp-nav-link:hover { background: var(--bs-tertiary-bg); }
 		#pp-acp .pp-nav-link.active { background: var(--bs-secondary-bg); font-weight: 600; }`;
 
+	let ME = { pages: PAGES.slice() };
+	const isFront = () => !!$('#pp-acp').attr('data-front');
+	const base = () => (isFront() ? `${rel}/protection-manager` : `${rel}/admin/plugins/password-protect`);
+
 	function frameHtml() {
-		const groups = NAV.map(([g, pages]) => `<div class="pp-nav-group">[[password-protect:acp.nav.${g}]]</div>${pages.map(p => `<a class="pp-nav-link" role="button" tabindex="0" data-pp-page="${p}" href="${rel}/admin/plugins/password-protect/${p}">[[password-protect:acp.tab.${p}]]</a>`).join('')}`).join('');
+		const groups = NAV.map(([g, pages]) => [g, pages.filter(p => ME.pages.includes(p))]).filter(([, pages]) => pages.length).map(([g, pages]) => `<div class="pp-nav-group">[[password-protect:acp.nav.${g}]]</div>${pages.map(p => `<a class="pp-nav-link" role="button" tabindex="0" data-pp-page="${p}" href="${base()}/${p}">[[password-protect:acp.tab.${p}]]</a>`).join('')}`).join('');
 		return `<style>${STYLE}</style>
 			<div class="pp-header d-flex align-items-center justify-content-between gap-2 pb-2 mb-4">
 				<h4 class="mb-0 fw-semibold"><i class="fa fa-lock text-muted"></i> [[password-protect:acp.title]]</h4>
@@ -45,12 +49,45 @@ define('admin/plugins/password-protect', ['api', 'alerts', 'translator', 'bootbo
 	function currentPage() {
 		const fromAttr = $('#pp-acp').attr('data-page');
 		const fromUrl = window.location.pathname.split('/').filter(Boolean).pop();
-		return [fromAttr, fromUrl].find(p => PAGES.includes(p)) || 'manage';
+		return [fromAttr, fromUrl].find(p => ME.pages.includes(p)) || ME.pages[0] || 'manage';
 	}
 
+	// Content is translated asynchronously, so event bindings must wait for it.
+	let ready = false;
+	let queued = [];
 	function render(html) {
-		translator.translate(html, (out) => { $root().html(out); });
+		ready = false;
+		translator.translate(html, (out) => {
+			$root().html(out);
+			ready = true;
+			const q = queued; queued = [];
+			q.forEach(fn => fn());
+		});
 	}
+	function afterRender(fn) { if (ready) fn(); else queued.push(fn); }
+
+	// bootbox labels are plain strings: translate title and buttons ourselves
+	function fixDialog(dlg) {
+		dlg.find('.modal-title, .modal-footer button, .bootbox-body').each((_, el) => {
+			const $el = $(el);
+			if ($el.children().length === 0 && /\[\[/.test($el.text())) translator.translate($el.text(), t => $el.text(t));
+		});
+		return dlg;
+	}
+	const LBL = {};
+	const sub = str => String(str).replace(/\[\[password-protect:([^\]]+)\]\]/g, (m, k) => (LBL[k] != null ? LBL[k] : m));
+	function preload(cb) {
+		const keys = ['modal.cancel', 'form.save', 'rule.new', 'acp.edit-protection'];
+		translator.translateKeys(keys.map(k => `[[password-protect:${k}]]`), (vals) => { keys.forEach((k, i) => { LBL[k] = vals[i]; }); cb(); });
+	}
+	const dialog = (o) => {
+		o.title = sub(o.title);
+		Object.values(o.buttons || {}).forEach((b) => { b.label = sub(b.label); });
+		return fixDialog(bootbox.dialog(o));
+	};
+	// a click handler must never fail silently
+	const safe = fn => function (...a) { try { return fn.apply(this, a); } catch (e) { console.error(e); return fail(e); } };
+	const confirmT = (key, cb) => T(key, m => fixDialog(bootbox.confirm(m, cb)));
 
 	function table(head, rows) {
 		return `<div class="table-responsive"><table class="table table-sm align-middle"><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.join('') || `<tr><td colspan="${head.length}" class="text-muted">[[password-protect:acp.empty]]</td></tr>`}</tbody></table></div>`;
@@ -77,6 +114,7 @@ define('admin/plugins/password-protect', ['api', 'alerts', 'translator', 'bootbo
 					<td>${esc(r.creatorName)}</td><td>${fmt(r.createdAt)}</td><td>${fmt(r.endAt)}</td>
 					<td>${r.type === 't' ? (r.lockChange || r.lockRemove ? '[[password-protect:acp.yes]]' : '[[password-protect:acp.no]]') : '—'}</td>
 					<td class="text-nowrap"><button class="btn btn-sm btn-outline-primary pp-edit" data-key="${r.key}">[[password-protect:acp.edit]]</button>
+						${ME.pages.includes('access') ? `<button class="btn btn-sm btn-outline-secondary pp-grant-row" data-key="${r.key}">[[password-protect:acp.grant-access]]</button>` : ''}
 						<button class="btn btn-sm btn-outline-danger pp-del" data-key="${r.key}">[[password-protect:form.remove]]</button></td></tr>`);
 				$('#pp-rows').html(table(['[[password-protect:acp.col.name]]', '[[password-protect:acp.col.type]]', '[[password-protect:acp.col.category]]', '[[password-protect:acp.col.status]]', '[[password-protect:acp.col.source]]', '[[password-protect:acp.col.creator]]', '[[password-protect:acp.col.created]]', '[[password-protect:acp.col.expires]]', '[[password-protect:acp.col.locked]]', ''], body));
 				translator.translate($('#pp-rows').html(), h => $('#pp-rows').html(h));
@@ -89,22 +127,23 @@ define('admin/plugins/password-protect', ['api', 'alerts', 'translator', 'bootbo
 					<select class="form-select w-auto" id="pp-sort"><option value="createdAt">[[password-protect:acp.col.created]]</option><option value="title">[[password-protect:acp.col.name]]</option><option value="endAt">[[password-protect:acp.col.expires]]</option></select>
 					${kind !== 'topics' ? '<button class="btn btn-primary" id="pp-add-cat">[[password-protect:acp.add-category]]</button>' : ''}
 				</div><div id="pp-rows"></div>`);
-			setTimeout(() => {
+			afterRender(() => {
 				draw();
 				$('#pp-q').on('input', function () { state.q = this.value; draw(); });
 				$('#pp-type').on('change', function () { state.type = this.value; draw(); });
 				$('#pp-status').on('change', function () { state.status = this.value; draw(); });
 				$('#pp-sort').on('change', function () { state.sort = this.value; state.dir = this.value === 'title' ? 1 : -1; draw(); });
 				$('#pp-content').off('click.pp').on('click.pp', '.pp-edit', function () { editProtection($(this).data('key'), rows.find(r => r.key === $(this).data('key'))); })
+					.on('click.pp', '.pp-grant-row', function () { const [t, id] = String($(this).data('key')).split(':'); ACP.prefill = { type: t, id }; ACP.navigate('access'); })
 					.on('click.pp', '.pp-del', function () {
 						const key = $(this).data('key');
 						const [t, id] = key.split(':');
-						bootbox.confirm('[[password-protect:acp.confirm-remove]]', (yes) => {
+						confirmT('[[password-protect:acp.confirm-remove]]', (yes) => {
 							if (yes) api.del(`${API}/protection/${t}/${id}`, {}).then(() => { toast('success', '[[password-protect:form.removed]]'); ACP.load(kind); }).catch(fail);
 						});
 					});
 				$('#pp-add-cat').on('click', () => {
-					bootbox.prompt({ title: '[[password-protect:acp.category-id]]', inputType: 'number', callback: (v) => { if (v) editProtection(`c:${parseInt(v, 10)}`, null); } });
+					T('[[password-protect:acp.category-id]]', (title) => bootbox.prompt({ title, inputType: 'number', callback: (v) => { if (v) editProtection(`c:${parseInt(v, 10)}`, null); } }));
 				});
 			}, 0);
 		}).catch(fail);
@@ -112,21 +151,30 @@ define('admin/plugins/password-protect', ['api', 'alerts', 'translator', 'bootbo
 
 	function editProtection(key, cur) {
 		const [t, id] = key.split(':');
+		api.get(`${API}/protection/${t}/${id}`).then(full => editProtectionForm(key, cur, full || {})).catch(fail);
+	}
+
+	function editProtectionForm(key, cur, extra) {
+		const [t, id] = key.split(':');
 		const isCat = t === 'c';
-		const p = cur || {};
+		const p = { ...(cur || {}), bypassGroups: extra.bypassGroups || (cur && cur.bypassGroups) || [] };
+		const can = extra.can || {};
 		const html = `<form class="pp-edit-form">
+			<p class="text-muted small mb-3">[[password-protect:acp.edit.intro.${isCat ? 'category' : 'topic'}]] <strong>${esc(p.title || key)}</strong></p>
 			<div class="mb-2"><label class="form-label">[[password-protect:form.password]]</label><input type="password" class="form-control" name="password" autocomplete="new-password" placeholder="${cur ? '[[password-protect:form.keep-password]]' : ''}"></div>
-			<div class="mb-2"><label class="form-label">[[password-protect:form.message]]</label><textarea class="form-control" name="message" rows="2" maxlength="1000">${esc(p.message || '')}</textarea></div>
+			${cur && extra.reauth ? '<div class="mb-2"><label class="form-label">[[password-protect:form.account-password-required]]</label><input type="password" class="form-control" name="accountPassword" autocomplete="current-password"></div>' : ''}
+			<div class="mb-2"><label class="form-label">[[password-protect:form.message]] [[password-protect:form.optional]]</label><textarea class="form-control" name="message" rows="2" maxlength="1000">${esc(p.message || '')}</textarea></div>
 			<div class="row g-2 mb-2"><div class="col"><label class="form-label">[[password-protect:form.start]]</label><input type="datetime-local" class="form-control" name="startAt" value="${local(p.startAt)}"></div>
 			<div class="col"><label class="form-label">[[password-protect:form.end]]</label><input type="datetime-local" class="form-control" name="endAt" value="${local(p.endAt)}"></div></div>
+			<div class="mb-2"><label class="form-label">[[password-protect:form.bypass-groups]]</label><input class="form-control" name="bypassGroups" value="${esc((p.bypassGroups || []).join(', '))}" ${can.bypassGroups === false ? 'disabled' : ''}><div class="form-text">[[password-protect:form.bypass-groups-hint]]</div></div>
 			<div class="form-check"><input class="form-check-input" type="checkbox" name="enabled" id="pp-en" ${p.enabled === false ? '' : 'checked'}><label class="form-check-label" for="pp-en">[[password-protect:form.enabled]]</label></div>
 			${isCat ? `<div class="form-check"><input class="form-check-input" type="checkbox" name="hidden" id="pp-hid" ${p.hidden ? 'checked' : ''}><label class="form-check-label" for="pp-hid">[[password-protect:form.hidden]]</label></div>` : `<div class="form-check"><input class="form-check-input" type="checkbox" name="exempt" id="pp-ex" ${p.exempt ? 'checked' : ''}><label class="form-check-label" for="pp-ex">[[password-protect:form.exempt]]</label></div>
 			<div class="form-check"><input class="form-check-input" type="checkbox" name="lockChange" id="pp-lc" ${p.lockChange ? 'checked' : ''}><label class="form-check-label" for="pp-lc">[[password-protect:form.lock-change]]</label></div>
 			<div class="form-check"><input class="form-check-input" type="checkbox" name="lockRemove" id="pp-lr" ${p.lockRemove ? 'checked' : ''}><label class="form-check-label" for="pp-lr">[[password-protect:form.lock-remove]]</label></div>`}
 		</form>`;
 		T(html, (out) => {
-			const dlg = bootbox.dialog({
-				title: esc(p.title || key),
+			const dlg = dialog({
+				title: `[[password-protect:acp.edit-protection]]: ${esc(p.title || key)}`,
 				message: out,
 				buttons: {
 					cancel: { label: '[[password-protect:modal.cancel]]', className: 'btn-link' },
@@ -143,6 +191,8 @@ define('admin/plugins/password-protect', ['api', 'alerts', 'translator', 'bootbo
 								endAt: parseDt(g('endAt').val()),
 								enabled: g('enabled').prop('checked'),
 							};
+							if (g('accountPassword').length) body.accountPassword = g('accountPassword').val();
+							if (g('bypassGroups').length && !g('bypassGroups').prop('disabled')) body.bypassGroups = g('bypassGroups').val();
 							if (isCat) body.hidden = g('hidden').prop('checked'); else body.exempt = g('exempt').prop('checked');
 							api.put(`${API}/protection/${t}/${id}`, body).then(() => {
 								if (isCat) return null;
@@ -190,7 +240,7 @@ define('admin/plugins/password-protect', ['api', 'alerts', 'translator', 'bootbo
 				<div class="mb-3"><label class="form-label">[[password-protect:set.replyContent]]</label><select class="form-select" data-k="notifications.replyContent">
 					<option value="generic" ${n.replyContent === 'generic' ? 'selected' : ''}>[[password-protect:set.reply.generic]]</option>
 					<option value="none" ${n.replyContent === 'none' ? 'selected' : ''}>[[password-protect:set.reply.none]]</option></select></div></form>`);
-			setTimeout(() => $('#pp-set').on('submit', (e) => {
+			afterRender(() => $('#pp-set').on('submit', (e) => {
 				e.preventDefault();
 				const body = {};
 				$('#pp-set [data-k]').each(function () {
@@ -211,7 +261,7 @@ define('admin/plugins/password-protect', ['api', 'alerts', 'translator', 'bootbo
 			const all = ['guests'].concat(groups).filter((g, i, a) => a.indexOf(g) === i);
 			render(`<p class="text-muted">[[password-protect:perm.note]]</p><form id="pp-perm">${table(['[[password-protect:perm.permission]]', '[[password-protect:perm.groups]]'], permissions.map(p => `<tr><td>[[password-protect:perm.${p}]]</td><td>
 				<select multiple class="form-select" size="5" data-p="${p}">${all.map(g => `<option value="${esc(g)}" ${(s.permissions[p] || []).includes(g) ? 'selected' : ''}>${esc(g)}</option>`).join('')}</select></td></tr>`))}</form>`);
-			setTimeout(() => $('#pp-perm').on('submit', (e) => {
+			afterRender(() => $('#pp-perm').on('submit', (e) => {
 				e.preventDefault();
 				const body = { permissions: {} };
 				$('#pp-perm select').each(function () { body.permissions[$(this).data('p')] = $(this).val() || []; });
@@ -228,10 +278,10 @@ define('admin/plugins/password-protect', ['api', 'alerts', 'translator', 'bootbo
 				<td class="small">cids: ${esc((r.conditions.cids || []).join(', ') || '—')}<br>uids: ${esc((r.conditions.uids || []).join(', ') || '—')}<br>groups: ${esc((r.conditions.groups || []).join(', ') || '—')}</td>
 				<td class="small">${fmt(r.startAt)} → ${fmt(r.endAt)}${r.removeAt ? `<br>[[password-protect:rule.removeAt]]: ${fmt(r.removeAt)}` : ''}</td>
 				<td class="text-nowrap"><button class="btn btn-sm btn-outline-primary pp-rule-edit" data-id="${r.id}">[[password-protect:acp.edit]]</button> <button class="btn btn-sm btn-outline-danger pp-rule-del" data-id="${r.id}">[[password-protect:form.remove]]</button></td></tr>`))}`);
-			setTimeout(() => {
-				$('#pp-new-rule').on('click', () => ruleDialog(null));
-				$('.pp-rule-edit').on('click', function () { ruleDialog(rules.find(r => r.id === $(this).data('id'))); });
-				$('.pp-rule-del').on('click', function () { const id = $(this).data('id'); bootbox.confirm('[[password-protect:acp.confirm-remove]]', (y) => { if (y) api.del(`${API}/admin/rules/${id}`, {}).then(() => ACP.load('rules')).catch(fail); }); });
+			afterRender(() => {
+				$('#pp-new-rule').on('click', safe(() => ruleDialog(null)));
+				$('.pp-rule-edit').on('click', safe(function () { ruleDialog(rules.find(r => r.id === $(this).data('id'))); }));
+				$('.pp-rule-del').on('click', function () { const id = $(this).data('id'); confirmT('[[password-protect:acp.confirm-remove]]', (y) => { if (y) api.del(`${API}/admin/rules/${id}`, {}).then(() => ACP.load('rules')).catch(fail); }); });
 				$('.pp-toggle').on('change', function () { api.post(`${API}/admin/rules/${$(this).data('id')}/toggle`, { enabled: this.checked }).catch(fail); });
 			}, 0);
 		}).catch(fail);
@@ -257,10 +307,9 @@ define('admin/plugins/password-protect', ['api', 'alerts', 'translator', 'bootbo
 			<div class="form-check"><input class="form-check-input" type="checkbox" name="lockChange" id="rl1" ${x.lockChange ? 'checked' : ''}><label class="form-check-label" for="rl1">[[password-protect:form.lock-change]]</label></div>
 			<div class="form-check"><input class="form-check-input" type="checkbox" name="lockRemove" id="rl2" ${x.lockRemove ? 'checked' : ''}><label class="form-check-label" for="rl2">[[password-protect:form.lock-remove]]</label></div>
 			</form>`, (out) => {
-			const dlg = bootbox.dialog({
+			const dlg = dialog({
 				title: '[[password-protect:rule.new]]',
 				message: out,
-				size: 'large',
 				buttons: {
 					cancel: { label: '[[password-protect:modal.cancel]]', className: 'btn-link' },
 					save: {
@@ -286,6 +335,7 @@ define('admin/plugins/password-protect', ['api', 'alerts', 'translator', 'bootbo
 					},
 				},
 			});
+			dlg.find('.modal-dialog').addClass('modal-lg');
 		});
 	}
 
@@ -301,7 +351,8 @@ define('admin/plugins/password-protect', ['api', 'alerts', 'translator', 'bootbo
 				${table(['[[password-protect:acc.user]]', '[[password-protect:acc.item]]', '[[password-protect:acc.granted]]', '[[password-protect:acc.expires]]', '[[password-protect:acp.col.status]]', ''], rows.map(a => `<tr><td>${esc(a.username)}</td><td>${esc(a.key)}</td><td>${fmt(a.grantedAt)}</td><td>${a.expiresAt ? fmt(a.expiresAt) : '[[password-protect:acc.permanent]]'}</td>
 				<td>${a.active ? '<span class="badge bg-success">[[password-protect:acp.status.active]]</span>' : `<span class="badge bg-secondary">${a.revokedAt ? '[[password-protect:acc.revoked]]' : '[[password-protect:acc.expired]]'}</span>`}</td>
 				<td>${a.active ? `<button class="btn btn-sm btn-outline-danger pp-revoke" data-id="${a.id}">[[password-protect:acc.revoke]]</button>` : ''}</td></tr>`))}`);
-			setTimeout(() => {
+			afterRender(() => {
+				if (ACP.prefill) { $('#pp-grant [name=type]').val(ACP.prefill.type); $('#pp-grant [name=id]').val(ACP.prefill.id); ACP.prefill = null; $('#pp-grant [name=username]').trigger('focus'); }
 				$('#pp-grant').on('submit', function (e) {
 					e.preventDefault();
 					const g = n => $(this).find(`[name=${n}]`).val();
@@ -333,19 +384,24 @@ define('admin/plugins/password-protect', ['api', 'alerts', 'translator', 'bootbo
 		else protectionsPage(page);
 	};
 
+	ACP.navigate = function (target) {
+		if (!ME.pages.includes(target)) return;
+		if (window.history && history.replaceState) history.replaceState(null, '', `${base()}/${target}`);
+		$('#pp-acp').attr('data-page', target);
+		ACP.load(target);
+	};
+
 	ACP.init = function () {
-		const page = currentPage();
-		translator.translate(frameHtml(), (out) => {
-			$('#pp-acp').html(out);
-			const go = (e) => {
-				e.preventDefault();
-				const target = $(e.currentTarget).attr('data-pp-page');
-				if (window.history && history.replaceState) history.replaceState(null, '', `${rel}/admin/plugins/password-protect/${target}`);
-				$('#pp-acp').attr('data-page', target);
-				ACP.load(target);
-			};
-			$('#pp-tabs').on('click', '.pp-nav-link', go).on('keydown', '.pp-nav-link', (e) => { if (e.key === 'Enter' || e.key === ' ') go(e); });
-			ACP.load(page);
+		preload(() => {
+			api.get(`${API}/me`).then((me) => { if (me && Array.isArray(me.pages)) ME = me; }).catch(() => {}).then(() => {
+				const page = currentPage();
+				translator.translate(frameHtml(), (out) => {
+					$('#pp-acp').html(out);
+					const go = (e) => { e.preventDefault(); ACP.navigate($(e.currentTarget).attr('data-pp-page')); };
+					$('#pp-tabs').on('click', '.pp-nav-link', go).on('keydown', '.pp-nav-link', (e) => { if (e.key === 'Enter' || e.key === ' ') go(e); });
+					ACP.load(page);
+				});
+			});
 		});
 	};
 

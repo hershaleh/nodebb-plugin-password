@@ -126,6 +126,7 @@
 					'[[password-protect:form.start]]', '[[password-protect:form.end]]', '[[password-protect:form.lock-change]]',
 					'[[password-protect:form.lock-remove]]', '[[password-protect:form.save]]', '[[password-protect:form.remove]]',
 					'[[password-protect:form.forgot]]', '[[password-protect:form.account-password]]', '[[password-protect:form.keep-password]]', '[[password-protect:form.message-hint]]', '[[password-protect:form.hidden]]',
+					'[[password-protect:form.account-password-required]]', '[[password-protect:form.bypass-groups]]', '[[password-protect:form.bypass-groups-hint]]', '[[password-protect:form.optional]]',
 				], (t) => {
 					const iso = ts => (ts ? new Date(ts - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '');
 					const dlg = bootbox.dialog({
@@ -134,9 +135,11 @@
 						<form class="pp-manage" autocomplete="off">
 							<div class="mb-3"><label class="form-label">${t[1]}</label>
 								<input type="password" name="password" class="form-control" autocomplete="new-password" maxlength="256" placeholder="${p.protected ? t[11] : ''}"></div>
-							${p.can.message ? `<div class="mb-3"><label class="form-label">${t[2]}</label>
+							${p.protected && p.reauth ? `<div class="mb-3"><label class="form-label">${t[14]}</label><input type="password" name="accountPassword" class="form-control" autocomplete="current-password"></div>` : ''}
+							${p.can.message ? `<div class="mb-3"><label class="form-label">${t[2]} ${t[17]}</label>
 								<textarea name="message" class="form-control" rows="2" maxlength="1000">${esc(p.message || '')}</textarea>
 								<div class="form-text">${t[12]}</div></div>` : ''}
+							${p.can.bypassGroups ? `<div class="mb-3"><label class="form-label">${t[15]}</label><input name="bypassGroups" class="form-control" value="${esc((p.bypassGroups || []).join(', '))}"><div class="form-text">${t[16]}</div></div>` : ''}
 							<div class="row g-2 mb-3">
 								<div class="col"><label class="form-label">${t[3]}</label><input type="datetime-local" name="startAt" class="form-control" value="${iso(p.startAt)}"></div>
 								<div class="col"><label class="form-label">${t[4]}</label><input type="datetime-local" name="endAt" class="form-control" value="${iso(p.endAt)}"></div>
@@ -167,6 +170,8 @@
 										startAt: val('startAt') ? new Date(val('startAt')).getTime() : 0,
 										endAt: val('endAt') ? new Date(val('endAt')).getTime() : 0,
 									};
+									if (f.find('[name=accountPassword]').length) body.accountPassword = val('accountPassword');
+									if (f.find('[name=bypassGroups]').length) body.bypassGroups = val('bypassGroups');
 									if (!isTopic) body.hidden = f.find('[name=hidden]').prop('checked');
 									const lockOps = [];
 									if (isTopic && p.protected) {
@@ -272,6 +277,12 @@
 		});
 	});
 
+	function initManager() {
+		if (!(ajaxify.data && ajaxify.data.template && ajaxify.data.template.name === 'password-protect/manager')) return;
+		require(['admin/plugins/password-protect'], m => m.init());
+	}
+
+	$(window).on('action:ajaxify.end', initManager);
 	$(window).on('action:ajaxify.end', handleLocked);
 	$(window).on('action:ajaxify.end', enhanceCategory);
 	$(document).on('click', '.pp-protect', function (e) {
@@ -279,5 +290,5 @@
 		const tid = ajaxify.data && ajaxify.data.tid;
 		if (tid) openManage('t', tid);
 	});
-	$(document).ready(() => { handleLocked(); enhanceCategory(); });
+	$(document).ready(() => { handleLocked(); enhanceCategory(); initManager(); });
 }());

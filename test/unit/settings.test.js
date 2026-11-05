@@ -45,3 +45,8 @@ test('custom prompt message: restricted to permitted groups by default; bad valu
 	assert.strictEqual(settings.sanitize({ messageWho: 'creators' }, settings.DEFAULTS).messageWho, 'creators');
 	assert.strictEqual(settings.sanitize({ messageWho: 'everyone' }, settings.DEFAULTS).messageWho, 'permitted');
 });
+
+test('re-authentication on password change is not a setting: it is always required', () => {
+	assert.strictEqual('reauthOnChange' in settings.DEFAULTS, false);
+	assert.strictEqual('reauthOnChange' in settings.sanitize({ reauthOnChange: false }, settings.DEFAULTS), false);
+});

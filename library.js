@@ -15,7 +15,8 @@ const migrations = require('./lib/migrations');
 const Plugin = module.exports;
 
 // Runs before NodeBB's routes: request context + the server-side gate.
-Plugin.preload = async ({ app }) => {
+Plugin.preload = async ({ app, middleware }) => {
+	guard.setMiddleware(middleware);
 	app.use((req, res, next) => als.run(req, next));
 	app.use(guard.middleware);
 };
